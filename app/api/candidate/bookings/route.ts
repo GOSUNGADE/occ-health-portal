@@ -37,7 +37,7 @@ export async function GET() {
       bookings: result.rows,
     });
   } catch (error) {
-    console.error("GET /api/candidates/bookings error:", error);
+    console.error("GET /api/candidate/bookings error:", error);
     return NextResponse.json(
       { error: "Failed to fetch bookings" },
       { status: 500 }
