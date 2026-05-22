@@ -17,6 +17,7 @@ const navItems = [
   { href: "/employer/bookings", label: "Bookings", icon: "🗓" },
   { href: "/employer/users", label: "Users", icon: "👤" },
   { href: "/employer/forms", label: "Forms", icon: "🗂" },
+  { href: "/employer/settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default function EmployerShell({

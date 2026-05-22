@@ -362,7 +362,8 @@ export default function LoginPage() {
 
             <p className="footer-text">
               Don&apos;t have an employer account?{" "}
-              <Link href="/register" className="footer-link">
+              <Link href="/forgot-password" className="footer-link" style={{display:"block",textAlign:"center",marginBottom:"10px"}}>Forgot password?</Link>
+            <Link href="/register" className="footer-link">
                 Register
               </Link>
             </p>
