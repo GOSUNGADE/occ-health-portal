@@ -224,7 +224,7 @@ export async function POST(req: NextRequest) {
     // Send welcome email — non-blocking
     const emailTemplate = buildInviteEmail(fullName, email, password, employerRole, companyName);
     resend.emails.send({
-      from: "onboarding@resend.dev", // Replace with verified domain
+      from: "noreply@fortiedgetech.com.au", // Replace with verified domain
       to: email,
       subject: emailTemplate.subject,
       html: emailTemplate.html,
