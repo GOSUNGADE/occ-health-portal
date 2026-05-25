@@ -1,25 +1,15 @@
-import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/auth";
+import { createSessionToken, setSessionCookie } from "@/lib/auth";
 import { BRANDING } from "@/lib/branding";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-function generateInviteToken() {
-  return crypto.randomBytes(32).toString("hex");
-}
-
-function getInviteExpiryDate() {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
-  return expiresAt;
-}
-
-function buildInviteEmail(candidateName: string, inviteLink: string) {
+function buildWelcomeEmail(fullName: string, portalUrl: string) {
   return {
-    subject: `You've been invited to ${BRANDING.shortName} Occupational Health Portal`,
+    subject: `You're registered — access your ${BRANDING.shortName} portal`,
     html: `
       <!DOCTYPE html>
       <html lang="en">
@@ -28,6 +18,8 @@ function buildInviteEmail(candidateName: string, inviteLink: string) {
         <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fb;padding:40px 16px;">
           <tr><td align="center">
             <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+
+              <!-- Header -->
               <tr>
                 <td style="background:linear-gradient(135deg,#0b1220 0%,#11203d 55%,#119ee8 100%);border-radius:20px 20px 0 0;padding:32px 36px;">
                   <table cellpadding="0" cellspacing="0"><tr>
@@ -39,32 +31,57 @@ function buildInviteEmail(candidateName: string, inviteLink: string) {
                   </tr></table>
                 </td>
               </tr>
+
+              <!-- Body -->
               <tr>
                 <td style="background:#ffffff;padding:36px;border-left:1px solid #e9eef5;border-right:1px solid #e9eef5;">
-                  <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;color:#101828;">Hi ${candidateName},</h1>
-                  <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#475569;">
-                    You've been invited to complete your occupational health assessment through the
-                    <strong>${BRANDING.shortName}</strong> portal. Please register your account using
-                    the button below to get started.
+
+                  <!-- Success badge -->
+                  <div style="display:inline-block;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:6px 14px;margin-bottom:20px;">
+                    <span style="color:#047857;font-size:13px;font-weight:700;">✓ Registration successful</span>
+                  </div>
+
+                  <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;color:#101828;">Welcome, ${fullName}!</h1>
+                  <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#475569;">
+                    Your account has been successfully created on the <strong>${BRANDING.shortName}</strong>
+                    Occupational Health Portal. You can now access your portal to view your bookings,
+                    complete health questionnaires, and track your assessments.
                   </p>
-                  <p style="margin:0 0 8px;font-size:14px;color:#64748b;">Your invite link expires in <strong>7 days</strong>.</p>
-                  <table cellpadding="0" cellspacing="0" style="margin:28px 0;">
+
+                  <!-- Portal link box -->
+                  <table cellpadding="0" cellspacing="0" width="100%" style="margin-bottom:28px;">
                     <tr>
-                      <td style="background:#119ee8;border-radius:14px;">
-                        <a href="${inviteLink}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">Register your account →</a>
+                      <td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:20px 24px;">
+                        <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Your Portal Link</p>
+                        <p style="margin:0;font-size:13px;word-break:break-all;">
+                          <a href="${portalUrl}" style="color:#119ee8;text-decoration:none;">${portalUrl}</a>
+                        </p>
+                        <p style="margin:10px 0 0;font-size:12px;color:#94a3b8;">Bookmark this link so you can always find your way back.</p>
                       </td>
                     </tr>
                   </table>
-                  <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">Or copy and paste this link into your browser:</p>
-                  <p style="margin:0;font-size:12px;color:#119ee8;word-break:break-all;">${inviteLink}</p>
+
+                  <!-- CTA Button -->
+                  <table cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="background:#119ee8;border-radius:14px;">
+                        <a href="${portalUrl}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">
+                          Go to my portal →
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
                 </td>
               </tr>
+
+              <!-- Footer -->
               <tr>
                 <td style="background:#f8fafc;border:1px solid #e9eef5;border-top:none;border-radius:0 0 20px 20px;padding:20px 36px;text-align:center;">
-                  <p style="margin:0;font-size:12px;color:#94a3b8;">If you weren't expecting this invitation, you can safely ignore this email.</p>
+                  <p style="margin:0;font-size:12px;color:#94a3b8;">If you have any questions, please contact your employer or our support team.</p>
                   <p style="margin:8px 0 0;font-size:12px;color:#cbd5e1;">© ${new Date().getFullYear()} ${BRANDING.shortName}. All rights reserved.</p>
                 </td>
               </tr>
+
             </table>
           </td></tr>
         </table>
@@ -74,139 +91,152 @@ function buildInviteEmail(candidateName: string, inviteLink: string) {
   };
 }
 
-export async function GET() {
-  try {
-    const sessionUser = await getSessionUser();
-
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (sessionUser.role !== "EMPLOYER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const companyId = sessionUser.company_id ?? sessionUser.id;
-
-    const result = await db.query(
-      `
-      SELECT
-        id,
-        full_name,
-        email,
-        phone,
-        date_of_birth,
-        notes,
-        linked_user_id,
-        created_at,
-        updated_at
-      FROM candidates
-      WHERE employer_id = $1
-      ORDER BY created_at DESC
-      `,
-      [companyId]
-    );
-
-    return NextResponse.json({ candidates: result.rows });
-  } catch (error) {
-    console.error("GET /api/candidates error:", error);
-    return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
-  }
-}
-
 export async function POST(req: NextRequest) {
   const client = await db.connect();
 
   try {
-    const sessionUser = await getSessionUser();
-
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (sessionUser.role !== "EMPLOYER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
     const body = await req.json();
 
+    const token = body.token?.trim();
     const fullName = body.full_name?.trim();
-    const email = body.email?.trim().toLowerCase() || null;
-    const phone = body.phone?.trim() || null;
-    const dateOfBirth = body.date_of_birth?.trim() || null;
-    const notes = body.notes?.trim() || null;
+    const password = body.password?.trim();
+
+    if (!token) {
+      return NextResponse.json({ error: "Invite token is required" }, { status: 400 });
+    }
 
     if (!fullName) {
       return NextResponse.json({ error: "Full name is required" }, { status: 400 });
     }
 
-    if (!email) {
-      return NextResponse.json({ error: "Candidate email is required for invitation" }, { status: 400 });
+    if (!password || password.length < 8) {
+      return NextResponse.json(
+        { error: "Password must be at least 8 characters long" },
+        { status: 400 }
+      );
     }
-
-    const companyId = sessionUser.company_id ?? sessionUser.id;
 
     await client.query("BEGIN");
 
-    const candidateResult = await client.query(
+    const inviteResult = await client.query(
       `
-      INSERT INTO candidates (
-        employer_id,
-        full_name,
-        email,
-        phone,
-        date_of_birth,
-        notes
-      )
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING
-        id,
-        employer_id,
-        full_name,
-        email,
-        phone,
-        date_of_birth,
-        notes,
-        linked_user_id,
-        created_at,
-        updated_at
+      SELECT
+        ci.id,
+        ci.candidate_id,
+        ci.email AS invite_email,
+        ci.token,
+        ci.expires_at,
+        ci.used_at,
+        c.full_name AS candidate_full_name,
+        c.email AS candidate_email,
+        c.linked_user_id
+      FROM candidate_invites ci
+      INNER JOIN candidates c ON c.id = ci.candidate_id
+      WHERE ci.token = $1
+      LIMIT 1
       `,
-      [companyId, fullName, email, phone, dateOfBirth, notes]
+      [token]
     );
 
-    const candidate = candidateResult.rows[0];
+    if (inviteResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "Invalid invite link" }, { status: 404 });
+    }
 
-    const token = generateInviteToken();
-    const expiresAt = getInviteExpiryDate();
+    const invite = inviteResult.rows[0];
+
+    if (invite.used_at) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "This invite link has already been used" }, { status: 400 });
+    }
+
+    if (new Date(invite.expires_at) < new Date()) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "This invite link has expired" }, { status: 400 });
+    }
+
+    if (invite.linked_user_id) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "Candidate account has already been registered" }, { status: 400 });
+    }
+
+    const registrationEmail = (invite.candidate_email || invite.invite_email)?.toLowerCase();
+
+    if (!registrationEmail) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
+    }
+
+    const existingUserResult = await client.query(
+      `SELECT id FROM users WHERE email = $1 LIMIT 1`,
+      [registrationEmail]
+    );
+
+    if (existingUserResult.rows.length > 0) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "An account with this email already exists" }, { status: 400 });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const userResult = await client.query(
+      `
+      INSERT INTO users (full_name, email, password_hash, role, must_change_password)
+      VALUES ($1, $2, $3, 'CANDIDATE', FALSE)
+      RETURNING id, email, role, must_change_password
+      `,
+      [fullName, registrationEmail, passwordHash]
+    );
+
+    const newUser = userResult.rows[0];
 
     await client.query(
-      `
-      INSERT INTO candidate_invites (candidate_id, email, token, expires_at)
-      VALUES ($1, $2, $3, $4)
-      `,
-      [candidate.id, email, token, expiresAt]
+      `UPDATE candidates SET full_name = $1, linked_user_id = $2, updated_at = NOW() WHERE id = $3`,
+      [fullName, newUser.id, invite.candidate_id]
+    );
+
+    await client.query(
+      `UPDATE candidate_invites SET used_at = NOW() WHERE id = $1`,
+      [invite.id]
     );
 
     await client.query("COMMIT");
 
-    const inviteLink = `${req.nextUrl.origin}/candidate/register?token=${token}`;
+    // Build portal URL
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+    const portalUrl = `${appUrl}/candidate/dashboard`;
 
-    const emailTemplate = buildInviteEmail(fullName, inviteLink);
+    // Send welcome email — non-blocking
+    const emailTemplate = buildWelcomeEmail(fullName, portalUrl);
     resend.emails.send({
-      from: "onboarding@resend.dev",
-      to: email,
+      from: "noreply@fortiedgetech.com.au",
+      to: registrationEmail,
       subject: emailTemplate.subject,
       html: emailTemplate.html,
-    }).catch((err) => console.error("Failed to send invite email:", err));
+    }).catch((err) => console.error("Failed to send candidate welcome email:", err));
 
-    return NextResponse.json(
-      { message: "Candidate created and invite sent successfully", candidate, inviteLink },
-      { status: 201 }
-    );
+    const sessionToken = createSessionToken({
+      id: Number(newUser.id),
+      email: newUser.email,
+      role: newUser.role,
+      must_change_password: newUser.must_change_password,
+    });
+
+    await setSessionCookie(sessionToken);
+
+    return NextResponse.json({
+      message: "Candidate registered successfully",
+      redirectTo: "/candidate/dashboard",
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        role: newUser.role,
+      },
+    });
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("POST /api/candidates error:", error);
-    return NextResponse.json({ error: "Failed to create candidate" }, { status: 500 });
+    console.error("POST /api/candidate-invites/register error:", error);
+    return NextResponse.json({ error: "Failed to register candidate" }, { status: 500 });
   } finally {
     client.release();
   }
