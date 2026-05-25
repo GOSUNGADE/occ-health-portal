@@ -267,7 +267,7 @@ export async function POST(req: NextRequest) {
     // Send welcome email — non-blocking so it never breaks registration
     const emailTemplate = buildWelcomeEmail(fullName, portalUrl);
     resend.emails.send({
-      from: "onboarding@resend.dev", // Replace with your verified domain
+      from: "noreply@fortiedgetech.com.au", // Replace with your verified domain
       to: registrationEmail,
       subject: emailTemplate.subject,
       html: emailTemplate.html,
