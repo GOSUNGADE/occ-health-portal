@@ -28,6 +28,8 @@ export async function PATCH(req: NextRequest, context: Context) {
       notes,
     } = body;
 
+    const companyId = user.company_id ?? user.id;
+
     const result = await db.query(
       `
       UPDATE bookings
@@ -56,7 +58,7 @@ export async function PATCH(req: NextRequest, context: Context) {
         status,
         notes,
         bookingId,
-        user.id,
+        companyId,
       ]
     );
 
@@ -69,12 +71,12 @@ export async function PATCH(req: NextRequest, context: Context) {
 
 export async function DELETE(_req: NextRequest, context: Context) {
   const user = await getSessionUser();
-  const { id } = await context.params;
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  await db.query(`DELETE FROM bookings WHERE id=$1 AND employer_id=$2`, [
-    id,
-    user?.id,
-  ]);
+  const { id } = await context.params;
+  const companyId = user.company_id ?? user.id;
+
+  await db.query(`DELETE FROM bookings WHERE id=$1 AND employer_id=$2`, [id, companyId]);
 
   return NextResponse.json({ message: "Deleted" });
 }

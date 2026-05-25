@@ -24,35 +24,23 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     const id = Number(documentId);
 
     if (Number.isNaN(id)) {
-      return NextResponse.json(
-        { error: "Invalid document id" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid document id" }, { status: 400 });
     }
+
+    const companyId = sessionUser.company_id ?? sessionUser.id;
 
     const result = await db.query(
       `
-      SELECT
-        bd.id,
-        bd.booking_id,
-        bd.original_name,
-        bd.stored_name,
-        bd.file_url,
-        bd.mime_type,
-        bd.file_size,
-        bd.uploaded_at
+      SELECT bd.id, bd.booking_id, bd.original_name, bd.stored_name, bd.file_url, bd.mime_type, bd.file_size, bd.uploaded_at
       FROM booking_documents bd
       INNER JOIN bookings b ON bd.booking_id = b.id
       WHERE bd.id = $1 AND b.employer_id = $2
       `,
-      [id, sessionUser.id]
+      [id, companyId]
     );
 
     if (result.rows.length === 0) {
-      return NextResponse.json(
-        { error: "Document not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
     }
 
     const doc = result.rows[0];
@@ -66,14 +54,9 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
       fs.unlinkSync(filePath);
     }
 
-    return NextResponse.json({
-      message: "Document deleted successfully",
-    });
+    return NextResponse.json({ message: "Document deleted successfully" });
   } catch (error) {
     console.error("DELETE /api/bookings/documents/[documentId] error:", error);
-    return NextResponse.json(
-      { error: "Failed to delete document" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to delete document" }, { status: 500 });
   }
 }

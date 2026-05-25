@@ -19,7 +19,15 @@ export async function POST(req: NextRequest) {
 
     const result = await db.query(
       `
-      SELECT id, email, password_hash, role, is_active, must_change_password
+      SELECT
+        id,
+        email,
+        password_hash,
+        role,
+        is_active,
+        must_change_password,
+        company_id,
+        employer_role
       FROM users
       WHERE email = $1
       LIMIT 1
@@ -38,66 +46,51 @@ export async function POST(req: NextRequest) {
 
     if (!user.is_active) {
       return NextResponse.json(
-        { error: "This account is inactive" },
+        { error: "Your account has been disabled. Please contact support." },
         { status: 403 }
       );
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.password_hash);
+    const passwordMatch = await bcrypt.compare(password, user.password_hash);
 
-    if (!passwordMatches) {
+    if (!passwordMatch) {
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
       );
     }
 
-    const mustChangePassword = user.must_change_password === true;
-
     const token = createSessionToken({
-      id: Number(user.id),
-      email: String(user.email),
+      id: user.id,
+      email: user.email,
       role: user.role,
-      must_change_password: mustChangePassword,
+      must_change_password: user.must_change_password,
+      company_id: user.company_id ?? undefined,
+      employer_role: user.employer_role ?? undefined,
     });
 
     await setSessionCookie(token);
 
     let redirectTo = "/login";
 
-    if (user.role === "EMPLOYER") {
+    if (user.must_change_password) {
+      redirectTo = "/change-password";
+    } else if (user.role === "EMPLOYER") {
       redirectTo = "/employer/dashboard";
     } else if (user.role === "ADMIN") {
-      redirectTo = mustChangePassword
-        ? "/admin/change-password"
-        : "/admin/dashboard";
+      redirectTo = "/admin/dashboard";
     } else if (user.role === "CLINICIAN") {
-      redirectTo = mustChangePassword
-        ? "/clinician/change-password"
-        : "/clinician/dashboard";
+      redirectTo = "/clinician/dashboard";
+    } else if (user.role === "CANDIDATE") {
+      redirectTo = "/candidate/dashboard";
     }
 
-    console.log("Shared login success:", {
-      email: user.email,
-      role: user.role,
-      mustChangePassword,
-      redirectTo,
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: "Login successful",
-      redirectTo,
-      user: {
-        id: Number(user.id),
-        email: String(user.email),
-        role: user.role,
-        must_change_password: mustChangePassword,
-      },
-    });
+    return NextResponse.json({ redirectTo });
   } catch (error) {
     console.error("POST /api/login error:", error);
-
-    return NextResponse.json({ error: "Login failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Login failed. Please try again." },
+      { status: 500 }
+    );
   }
 }

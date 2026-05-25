@@ -14,6 +14,8 @@ export async function GET() {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const companyId = sessionUser.company_id ?? sessionUser.id;
+
     const result = await db.query(
       `
       SELECT
@@ -35,40 +37,24 @@ export async function GET() {
         c.full_name AS candidate_name,
         c.email AS candidate_email,
 
-        CASE
-          WHEN bc.id IS NOT NULL THEN true
-          ELSE false
-        END AS consent_completed,
-
-        CASE
-          WHEN bq.submitted = true THEN true
-          ELSE false
-        END AS questionnaire_completed
+        CASE WHEN bc.id IS NOT NULL THEN true ELSE false END AS consent_completed,
+        CASE WHEN bq.submitted = true THEN true ELSE false END AS questionnaire_completed
 
       FROM bookings b
-      JOIN candidates c
-        ON b.candidate_id = c.id
-
-      LEFT JOIN booking_consents bc
-        ON bc.booking_id = b.id
-
-      LEFT JOIN booking_questionnaires bq
-        ON bq.booking_id = b.id
+      JOIN candidates c ON b.candidate_id = c.id
+      LEFT JOIN booking_consents bc ON bc.booking_id = b.id
+      LEFT JOIN booking_questionnaires bq ON bq.booking_id = b.id
 
       WHERE b.employer_id = $1
       ORDER BY b.created_at DESC
       `,
-      [sessionUser.id]
+      [companyId]
     );
 
     return NextResponse.json({ bookings: result.rows });
   } catch (error) {
     console.error("GET /api/bookings error:", error);
-
-    return NextResponse.json(
-      { error: "Failed to fetch bookings." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch bookings." }, { status: 500 });
   }
 }
 
@@ -96,34 +82,22 @@ export async function POST(req: NextRequest) {
     const notes = String(body.notes ?? "").trim() || null;
 
     if (!Number.isFinite(candidateId)) {
-      return NextResponse.json(
-        { error: "Valid candidate is required." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Valid candidate is required." }, { status: 400 });
     }
 
     if (!appointmentDate) {
-      return NextResponse.json(
-        { error: "Appointment date is required." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Appointment date is required." }, { status: 400 });
     }
 
+    const companyId = sessionUser.company_id ?? sessionUser.id;
+
     const candidateResult = await db.query(
-      `
-      SELECT id
-      FROM candidates
-      WHERE id = $1
-        AND employer_id = $2
-      `,
-      [candidateId, sessionUser.id]
+      `SELECT id FROM candidates WHERE id = $1 AND employer_id = $2`,
+      [candidateId, companyId]
     );
 
     if (candidateResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: "Candidate not found." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Candidate not found." }, { status: 404 });
     }
 
     const insertResult = await db.query(
@@ -142,22 +116,10 @@ export async function POST(req: NextRequest) {
         created_at,
         updated_at
       )
-      VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, 'SCHEDULED', $9, NOW(), NOW()
-      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'SCHEDULED', $9, NOW(), NOW())
       RETURNING *
       `,
-      [
-        sessionUser.id,
-        candidateId,
-        appointmentDate,
-        appointmentTime,
-        assessmentType,
-        clinicLocation,
-        assignedClinician,
-        priority,
-        notes,
-      ]
+      [companyId, candidateId, appointmentDate, appointmentTime, assessmentType, clinicLocation, assignedClinician, priority, notes]
     );
 
     return NextResponse.json({
@@ -167,10 +129,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("POST /api/bookings error:", error);
-
-    return NextResponse.json(
-      { error: "Failed to create booking." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to create booking." }, { status: 500 });
   }
 }
