@@ -135,7 +135,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const emailTemplate = buildInviteEmail(candidate.full_name, inviteLink);
     resend.emails.send({
-      from: "onboarding@resend.dev",
+      from: "noreply@fortiedgetech.com.au",
       to: candidate.email,
       subject: emailTemplate.subject,
       html: emailTemplate.html,
