@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import {
-  createSessionToken,
-  getSessionUser,
-  setSessionCookie,
-} from "@/lib/auth";
+import { createSessionToken, getSessionUser, setSessionCookie } from "@/lib/auth";
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -36,7 +32,15 @@ export async function PATCH(req: NextRequest) {
 
     const result = await db.query(
       `
-      SELECT id, email, password_hash, role, is_active, must_change_password
+      SELECT
+        id,
+        email,
+        password_hash,
+        role,
+        is_active,
+        must_change_password,
+        company_id,
+        employer_role
       FROM users
       WHERE id = $1
       LIMIT 1
@@ -51,28 +55,16 @@ export async function PATCH(req: NextRequest) {
     const user = result.rows[0];
 
     if (!user.is_active) {
-      return NextResponse.json(
-        { error: "This account is inactive" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "This account is inactive" }, { status: 403 });
     }
 
-    const passwordMatches = await bcrypt.compare(
-      currentPassword,
-      user.password_hash
-    );
+    const passwordMatches = await bcrypt.compare(currentPassword, user.password_hash);
 
     if (!passwordMatches) {
-      return NextResponse.json(
-        { error: "Current password is incorrect" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Current password is incorrect" }, { status: 400 });
     }
 
-    const isSamePassword = await bcrypt.compare(
-      newPassword,
-      user.password_hash
-    );
+    const isSamePassword = await bcrypt.compare(newPassword, user.password_hash);
 
     if (isSamePassword) {
       return NextResponse.json(
@@ -94,11 +86,14 @@ export async function PATCH(req: NextRequest) {
       [newPasswordHash, user.id]
     );
 
+    // Preserve company_id and employer_role in the new token
     const newToken = createSessionToken({
       id: user.id,
       email: user.email,
       role: user.role,
       must_change_password: false,
+      company_id: user.company_id ?? undefined,
+      employer_role: user.employer_role ?? undefined,
     });
 
     await setSessionCookie(newToken);
@@ -111,6 +106,8 @@ export async function PATCH(req: NextRequest) {
       redirectTo = "/clinician/dashboard";
     } else if (user.role === "EMPLOYER") {
       redirectTo = "/employer/dashboard";
+    } else if (user.role === "CANDIDATE") {
+      redirectTo = "/candidate/dashboard";
     }
 
     return NextResponse.json({
@@ -125,10 +122,6 @@ export async function PATCH(req: NextRequest) {
     });
   } catch (error) {
     console.error("PATCH /api/auth/change-password error:", error);
-
-    return NextResponse.json(
-      { error: "Failed to change password" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to change password" }, { status: 500 });
   }
 }

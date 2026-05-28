@@ -46,25 +46,27 @@ export async function POST(req: NextRequest) {
 
     if (!user.is_active) {
       return NextResponse.json(
-        { error: "Your account has been disabled. Please contact support." },
+        { error: "This account is inactive" },
         { status: 403 }
       );
     }
 
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
+    const passwordMatches = await bcrypt.compare(password, user.password_hash);
 
-    if (!passwordMatch) {
+    if (!passwordMatches) {
       return NextResponse.json(
         { error: "Invalid email or password" },
         { status: 401 }
       );
     }
 
+    const mustChangePassword = user.must_change_password === true;
+
     const token = createSessionToken({
-      id: user.id,
-      email: user.email,
+      id: Number(user.id),
+      email: String(user.email),
       role: user.role,
-      must_change_password: user.must_change_password,
+      must_change_password: mustChangePassword,
       company_id: user.company_id ?? undefined,
       employer_role: user.employer_role ?? undefined,
     });
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     let redirectTo = "/login";
 
-    if (user.must_change_password) {
+    if (mustChangePassword) {
       redirectTo = "/change-password";
     } else if (user.role === "EMPLOYER") {
       redirectTo = "/employer/dashboard";
@@ -85,12 +87,19 @@ export async function POST(req: NextRequest) {
       redirectTo = "/candidate/dashboard";
     }
 
-    return NextResponse.json({ redirectTo });
+    return NextResponse.json({
+      success: true,
+      message: "Login successful",
+      redirectTo,
+      user: {
+        id: Number(user.id),
+        email: String(user.email),
+        role: user.role,
+        must_change_password: mustChangePassword,
+      },
+    });
   } catch (error) {
     console.error("POST /api/login error:", error);
-    return NextResponse.json(
-      { error: "Login failed. Please try again." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Login failed" }, { status: 500 });
   }
 }
