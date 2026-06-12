@@ -294,7 +294,6 @@ export default function CandidateDetailPage() {
                           {/* Icon dot */}
                           <div style={{
                             width: "40px", height: "40px", borderRadius: "50%", flexShrink: 0,
-                            background: `${meta.color}18`,
                             border: `2px solid ${meta.color}`,
                             display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: "18px", zIndex: 1, background: "#fff",
