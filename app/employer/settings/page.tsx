@@ -62,7 +62,7 @@ export default function EmployerSettingsPage() {
       <div className="max-w-lg rounded-2xl border bg-white p-6 shadow-sm">
         <h2 className="text-lg font-bold text-slate-900">Change Password</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Update your password. You'll need to enter your current password to confirm.
+          Update your password. You&apos;ll need to enter your current password to confirm.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">

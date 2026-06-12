@@ -121,7 +121,7 @@ export default function ForgotPasswordPage() {
             <div className="hero-text-wrap">
               <h2 className="hero-title">Forgot your password?</h2>
               <p className="hero-text">
-                No problem. Enter your email and we'll send you a link to reset it.
+                No problem. Enter your email and we&apos;ll send you a link to reset it.
                 The link expires after 1 hour.
               </p>
             </div>
@@ -135,9 +135,9 @@ export default function ForgotPasswordPage() {
                 <div className="success-icon">📬</div>
                 <h2 className="success-title">Check your email</h2>
                 <p className="success-text">
-                  If an account exists for <strong>{email}</strong>, you'll
+                  If an account exists for <strong>{email}</strong>, you&apos;ll
                   receive a password reset link shortly. Check your spam folder
-                  if it doesn't arrive within a few minutes.
+                  if it doesn&apos;t arrive within a few minutes.
                 </p>
                 <p className="footer-text" style={{ marginTop: "28px" }}>
                   <Link href="/login" className="footer-link">← Back to sign in</Link>
@@ -146,7 +146,7 @@ export default function ForgotPasswordPage() {
             ) : (
               <>
                 <h2 className="form-title">Reset password</h2>
-                <p className="form-subtitle">We'll email you a reset link</p>
+                <p className="form-subtitle">We&apos;ll email you a reset link</p>
 
                 <form onSubmit={handleSubmit} className="form">
                   <div>

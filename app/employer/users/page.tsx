@@ -258,7 +258,7 @@ export default function EmployerUsersPage() {
         <div className="rounded-2xl border bg-white p-6 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">Add Team User</h2>
           <p className="mt-1 text-sm text-slate-500">
-            They'll receive an email with their login credentials.
+            They&apos;ll receive an email with their login credentials.
           </p>
           <form onSubmit={handleCreate} className="mt-5 grid gap-4 sm:grid-cols-2">
             <div>

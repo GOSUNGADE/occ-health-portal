@@ -1,74 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-
-const ALLOWED_PRIORITIES = new Set(["STANDARD", "PRIORITY", "URGENT"]);
-
-function cleanText(value: unknown) {
-  const text = String(value ?? "").trim();
-  return text.length ? text : null;
-}
-
-function cleanPriority(value: unknown) {
-  const priority = String(value ?? "STANDARD")
-    .trim()
-    .toUpperCase();
-  return ALLOWED_PRIORITIES.has(priority) ? priority : "STANDARD";
-}
+import { logCandidateActivity, ACTIVITY_ACTIONS } from "@/lib/activity-log";
 
 export async function GET() {
   try {
     const sessionUser = await getSessionUser();
-
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (sessionUser.role !== "EMPLOYER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (sessionUser.role !== "EMPLOYER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const companyId = sessionUser.company_id ?? sessionUser.id;
 
     const result = await db.query(
       `
       SELECT
-        b.id,
-        b.employer_id,
-        b.candidate_id,
-        b.appointment_date,
-        b.appointment_time,
-        b.assessment_type,
-        b.assessment_type_id,
-        b.clinic_location,
-        b.preferred_clinician,
-        b.assigned_clinician,
-        b.assigned_clinician_id,
-        b.priority,
-        b.status,
-        b.notes,
-        b.created_at,
-        b.updated_at,
-        b.cancelled_at,
-        b.cancellation_reason,
-
-        c.full_name AS candidate_name,
-        c.email AS candidate_email,
-
-        at.name AS assessment_type_name,
-        at.industry AS assessment_industry,
+        b.id, b.employer_id, b.candidate_id, b.appointment_date, b.appointment_time,
+        b.assessment_type, b.assessment_type_id, b.assessment_status,
+        b.clinic_location, b.assigned_clinician, b.assigned_clinician_id,
+        b.priority, b.status, b.notes, b.created_at, b.updated_at,
+        c.full_name  AS candidate_name,
+        c.email      AS candidate_email,
+        at.name      AS assessment_type_name,
+        at.industry  AS assessment_industry,
         at.duration_minutes,
-
         CASE WHEN bc.id IS NOT NULL THEN true ELSE false END AS consent_completed,
-        CASE WHEN bq.submitted = true THEN true ELSE false END AS questionnaire_completed,
-
-        CASE
-          WHEN b.assigned_clinician_id IS NULL
-           AND b.status = 'SCHEDULED'
-          THEN true
-          ELSE false
-        END AS can_employer_modify
-
+        CASE WHEN bq.submitted = true  THEN true ELSE false END AS questionnaire_completed,
+        (SELECT COUNT(*) FROM booking_assessment_tests bat WHERE bat.booking_id = b.id) AS total_tests,
+        (SELECT COUNT(*) FROM booking_assessment_tests bat WHERE bat.booking_id = b.id AND bat.status = 'COMPLETED') AS completed_tests
       FROM bookings b
       JOIN candidates c ON b.candidate_id = c.id
       LEFT JOIN assessment_types at ON at.id = b.assessment_type_id
@@ -77,139 +35,125 @@ export async function GET() {
       WHERE b.employer_id = $1
       ORDER BY b.created_at DESC
       `,
-      [companyId],
+      [companyId]
     );
 
     return NextResponse.json({ bookings: result.rows });
   } catch (error) {
     console.error("GET /api/bookings error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch bookings." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to fetch bookings." }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
+  const client = await db.connect();
   try {
     const sessionUser = await getSessionUser();
-
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (sessionUser.role !== "EMPLOYER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (sessionUser.role !== "EMPLOYER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await req.json();
+    const candidateId       = Number(body.candidate_id);
+    const appointmentDate   = String(body.appointment_date ?? "").trim();
+    const appointmentTime   = String(body.appointment_time ?? "").trim() || null;
+    const assessmentTypeId  = body.assessment_type_id ? Number(body.assessment_type_id) : null;
+    const clinicLocation    = String(body.clinic_location ?? "").trim() || null;
+    const assignedClinician = String(body.assigned_clinician ?? "").trim() || null;
+    const priority          = String(body.priority ?? "STANDARD").trim() || "STANDARD";
+    const notes             = String(body.notes ?? "").trim() || null;
 
-    const candidateId = Number(body.candidate_id);
-    const assessmentTypeId = body.assessment_type_id
-      ? Number(body.assessment_type_id)
-      : null;
-    const appointmentDate = String(body.appointment_date ?? "").trim();
-    const appointmentTime = cleanText(body.appointment_time);
-    const clinicLocation = cleanText(body.clinic_location);
-    const preferredClinician = cleanText(body.preferred_clinician);
-    const priority = cleanPriority(body.priority);
-    const notes = cleanText(body.notes);
-
-    if (!Number.isFinite(candidateId)) {
-      return NextResponse.json(
-        { error: "Valid candidate is required." },
-        { status: 400 },
-      );
-    }
-
-    if (!assessmentTypeId || !Number.isFinite(assessmentTypeId)) {
-      return NextResponse.json(
-        { error: "Assessment type is required." },
-        { status: 400 },
-      );
-    }
-
-    if (!appointmentDate) {
-      return NextResponse.json(
-        { error: "Appointment date is required." },
-        { status: 400 },
-      );
-    }
+    if (!Number.isFinite(candidateId)) return NextResponse.json({ error: "Valid candidate is required." }, { status: 400 });
+    if (!appointmentDate)              return NextResponse.json({ error: "Appointment date is required." }, { status: 400 });
+    if (!assessmentTypeId)             return NextResponse.json({ error: "Assessment type is required." }, { status: 400 });
 
     const companyId = sessionUser.company_id ?? sessionUser.id;
 
-    const candidateResult = await db.query(
-      `SELECT id FROM candidates WHERE id = $1 AND employer_id = $2`,
-      [candidateId, companyId],
+    const performerResult = await client.query(`SELECT full_name FROM users WHERE id = $1`, [sessionUser.id]);
+    const performerName = performerResult.rows[0]?.full_name || sessionUser.email;
+
+    const candidateResult = await client.query(
+      `SELECT id, full_name FROM candidates WHERE id = $1 AND employer_id = $2`,
+      [candidateId, companyId]
     );
+    if (candidateResult.rows.length === 0) return NextResponse.json({ error: "Candidate not found." }, { status: 404 });
+    const candidate = candidateResult.rows[0];
 
-    if (candidateResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: "Candidate not found." },
-        { status: 404 },
-      );
-    }
-
-    const assessmentTypeResult = await db.query(
+    const assessmentTypeResult = await client.query(
       `SELECT id, name FROM assessment_types WHERE id = $1 AND is_active = TRUE`,
-      [assessmentTypeId],
+      [assessmentTypeId]
     );
+    if (assessmentTypeResult.rows.length === 0) return NextResponse.json({ error: "Assessment type not found." }, { status: 404 });
+    const assessmentType = assessmentTypeResult.rows[0];
 
-    if (assessmentTypeResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: "Assessment type not found." },
-        { status: 404 },
-      );
-    }
+    const testsResult = await client.query(
+      `
+      SELECT att.assessment_test_id, att.is_required, att.display_order, t.name AS test_name, t.category
+      FROM assessment_type_tests att
+      JOIN assessment_tests t ON t.id = att.assessment_test_id
+      WHERE att.assessment_type_id = $1
+      ORDER BY att.display_order ASC, t.name ASC
+      `,
+      [assessmentTypeId]
+    );
+    const tests = testsResult.rows;
 
-    const assessmentTypeName = assessmentTypeResult.rows[0].name;
+    await client.query("BEGIN");
 
-    const insertResult = await db.query(
+    const insertResult = await client.query(
       `
       INSERT INTO bookings (
-        employer_id,
-        candidate_id,
-        appointment_date,
-        appointment_time,
-        assessment_type,
-        assessment_type_id,
-        clinic_location,
-        preferred_clinician,
-        assigned_clinician,
-        assigned_clinician_id,
-        priority,
-        status,
-        notes,
-        created_at,
-        updated_at
+        employer_id, candidate_id, appointment_date, appointment_time,
+        assessment_type, assessment_type_id, assessment_status,
+        clinic_location, assigned_clinician, priority, status, notes, created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL, $9, 'SCHEDULED', $10, NOW(), NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, $8, $9, 'SCHEDULED', $10, NOW(), NOW())
       RETURNING *
       `,
-      [
-        companyId,
-        candidateId,
-        appointmentDate,
-        appointmentTime,
-        assessmentTypeName,
-        assessmentTypeId,
-        clinicLocation,
-        preferredClinician,
-        priority,
-        notes,
-      ],
+      [companyId, candidateId, appointmentDate, appointmentTime, assessmentType.name,
+       assessmentTypeId, clinicLocation, assignedClinician, priority, notes]
     );
+
+    const booking = insertResult.rows[0];
+
+    // Snapshot tests
+    for (const test of tests) {
+      await client.query(
+        `
+        INSERT INTO booking_assessment_tests
+          (booking_id, assessment_test_id, test_name, category, is_required, display_order, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')
+        `,
+        [booking.id, test.assessment_test_id, test.test_name, test.category, test.is_required, test.display_order]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    const ipAddress = req.headers.get("x-forwarded-for") || null;
+    const userAgent = req.headers.get("user-agent") || null;
+
+    // Log booking created
+    await logCandidateActivity({
+      candidateId,
+      bookingId: booking.id,
+      user: { id: sessionUser.id, full_name: performerName, role: sessionUser.role },
+      actionType: ACTIVITY_ACTIONS.BOOKING_CREATED,
+      description: `Booking created for ${candidate.full_name} — ${assessmentType.name} on ${appointmentDate}${clinicLocation ? ` at ${clinicLocation}` : ""}.`,
+      metadata: { assessmentType: assessmentType.name, appointmentDate, appointmentTime, clinicLocation, priority, totalTests: tests.length },
+      ipAddress,
+      userAgent,
+    });
 
     return NextResponse.json({
       success: true,
       message: "Booking created successfully.",
-      booking: insertResult.rows[0],
+      booking: { ...booking, assessment_type_name: assessmentType.name, total_tests: tests.length, completed_tests: 0 },
     });
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("POST /api/bookings error:", error);
-    return NextResponse.json(
-      { error: "Failed to create booking." },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Failed to create booking." }, { status: 500 });
+  } finally {
+    client.release();
   }
 }

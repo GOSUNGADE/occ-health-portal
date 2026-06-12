@@ -4,6 +4,7 @@ import { Resend } from "resend";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { BRANDING } from "@/lib/branding";
+import { logCandidateActivity, ACTIVITY_ACTIONS } from "@/lib/activity-log";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -77,29 +78,14 @@ function buildInviteEmail(candidateName: string, inviteLink: string) {
 export async function GET() {
   try {
     const sessionUser = await getSessionUser();
-
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (sessionUser.role !== "EMPLOYER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (sessionUser.role !== "EMPLOYER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const companyId = sessionUser.company_id ?? sessionUser.id;
 
     const result = await db.query(
       `
-      SELECT
-        id,
-        full_name,
-        email,
-        phone,
-        date_of_birth,
-        notes,
-        linked_user_id,
-        created_at,
-        updated_at
+      SELECT id, full_name, email, phone, date_of_birth, notes, linked_user_id, created_at, updated_at
       FROM candidates
       WHERE employer_id = $1
       ORDER BY created_at DESC
@@ -119,80 +105,75 @@ export async function POST(req: NextRequest) {
 
   try {
     const sessionUser = await getSessionUser();
-
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (sessionUser.role !== "EMPLOYER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (sessionUser.role !== "EMPLOYER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await req.json();
-
-    const fullName = body.full_name?.trim();
-    const email = body.email?.trim().toLowerCase() || null;
-    const phone = body.phone?.trim() || null;
+    const fullName    = body.full_name?.trim();
+    const email       = body.email?.trim().toLowerCase() || null;
+    const phone       = body.phone?.trim() || null;
     const dateOfBirth = body.date_of_birth?.trim() || null;
-    const notes = body.notes?.trim() || null;
+    const notes       = body.notes?.trim() || null;
 
-    if (!fullName) {
-      return NextResponse.json({ error: "Full name is required" }, { status: 400 });
-    }
-
-    if (!email) {
-      return NextResponse.json(
-        { error: "Candidate email is required for invitation" },
-        { status: 400 }
-      );
-    }
+    if (!fullName) return NextResponse.json({ error: "Full name is required" }, { status: 400 });
+    if (!email)    return NextResponse.json({ error: "Candidate email is required for invitation" }, { status: 400 });
 
     const companyId = sessionUser.company_id ?? sessionUser.id;
+
+    // Get performer's full_name for activity log
+    const performerResult = await db.query(
+      `SELECT full_name FROM users WHERE id = $1`,
+      [sessionUser.id]
+    );
+    const performerName = performerResult.rows[0]?.full_name || sessionUser.email;
 
     await client.query("BEGIN");
 
     const candidateResult = await client.query(
       `
-      INSERT INTO candidates (
-        employer_id,
-        full_name,
-        email,
-        phone,
-        date_of_birth,
-        notes
-      )
+      INSERT INTO candidates (employer_id, full_name, email, phone, date_of_birth, notes)
       VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING
-        id,
-        employer_id,
-        full_name,
-        email,
-        phone,
-        date_of_birth,
-        notes,
-        linked_user_id,
-        created_at,
-        updated_at
+      RETURNING id, employer_id, full_name, email, phone, date_of_birth, notes, linked_user_id, created_at, updated_at
       `,
       [companyId, fullName, email, phone, dateOfBirth, notes]
     );
 
     const candidate = candidateResult.rows[0];
 
-    const token = generateInviteToken();
+    const token     = generateInviteToken();
     const expiresAt = getInviteExpiryDate();
 
     await client.query(
-      `
-      INSERT INTO candidate_invites (candidate_id, email, token, expires_at)
-      VALUES ($1, $2, $3, $4)
-      `,
+      `INSERT INTO candidate_invites (candidate_id, email, token, expires_at) VALUES ($1, $2, $3, $4)`,
       [candidate.id, email, token, expiresAt]
     );
 
     await client.query("COMMIT");
 
     const inviteLink = `${req.nextUrl.origin}/candidate/register?token=${token}`;
+    const ipAddress  = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null;
+    const userAgent  = req.headers.get("user-agent") || null;
+
+    // Log: candidate created
+    await logCandidateActivity({
+      candidateId: candidate.id,
+      user: { id: sessionUser.id, full_name: performerName, role: sessionUser.role },
+      actionType: ACTIVITY_ACTIONS.CANDIDATE_CREATED,
+      description: `Candidate ${fullName} was created and added to the portal.`,
+      metadata: { email, phone },
+      ipAddress,
+      userAgent,
+    });
+
+    // Log: invite sent
+    await logCandidateActivity({
+      candidateId: candidate.id,
+      user: { id: sessionUser.id, full_name: performerName, role: sessionUser.role },
+      actionType: ACTIVITY_ACTIONS.INVITE_SENT,
+      description: `Invite email sent to ${email}. Link expires in 7 days.`,
+      ipAddress,
+      userAgent,
+    });
 
     // Send invite email — non-blocking
     const emailTemplate = buildInviteEmail(fullName, inviteLink);
@@ -204,11 +185,7 @@ export async function POST(req: NextRequest) {
     }).catch((err) => console.error("Failed to send invite email:", err));
 
     return NextResponse.json(
-      {
-        message: "Candidate created and invite sent successfully",
-        candidate,
-        inviteLink,
-      },
+      { message: "Candidate created and invite sent successfully", candidate, inviteLink },
       { status: 201 }
     );
   } catch (error) {

@@ -180,7 +180,7 @@ export default function ResetPasswordPage() {
             <div className="hero-text-wrap">
               <h2 className="hero-title">Choose a new password</h2>
               <p className="hero-text">
-                Pick something strong and memorable. You'll use it every time you sign in.
+                Pick something strong and memorable. You&apos;ll use it every time you sign in.
               </p>
             </div>
           </div>

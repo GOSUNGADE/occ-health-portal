@@ -4,26 +4,23 @@ import { Resend } from "resend";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
 import { BRANDING } from "@/lib/branding";
+import { logCandidateActivity, ACTIVITY_ACTIONS } from "@/lib/activity-log";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-function generateInviteToken() {
-  return crypto.randomBytes(32).toString("hex");
-}
-
+function generateInviteToken() { return crypto.randomBytes(32).toString("hex"); }
 function getInviteExpiryDate() {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
-  return expiresAt;
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d;
 }
 
 function buildInviteEmail(candidateName: string, inviteLink: string) {
   return {
     subject: `Your invite link to ${BRANDING.shortName} Occupational Health Portal`,
     html: `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+      <!DOCTYPE html><html lang="en">
+      <head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/></head>
       <body style="margin:0;padding:0;background:#f5f7fb;font-family:Arial,sans-serif;">
         <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7fb;padding:40px 16px;">
           <tr><td align="center">
@@ -40,20 +37,15 @@ function buildInviteEmail(candidateName: string, inviteLink: string) {
                 </td>
               </tr>
               <tr>
-                <td style="background:#ffffff;padding:36px;border-left:1px solid #e9eef5;border-right:1px solid #e9eef5;">
+                <td style="background:#fff;padding:36px;border-left:1px solid #e9eef5;border-right:1px solid #e9eef5;">
                   <h1 style="margin:0 0 12px;font-size:24px;font-weight:700;color:#101828;">Hi ${candidateName},</h1>
-                  <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#475569;">
-                    A new invite link has been generated for you to access the <strong>${BRANDING.shortName}</strong> portal.
-                  </p>
-                  <p style="margin:0 0 8px;font-size:14px;color:#64748b;">This link expires in <strong>7 days</strong>.</p>
+                  <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#475569;">A new invite link has been generated for you. This link expires in <strong>7 days</strong>.</p>
                   <table cellpadding="0" cellspacing="0" style="margin:28px 0;">
-                    <tr>
-                      <td style="background:#119ee8;border-radius:14px;">
-                        <a href="${inviteLink}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;">Register your account →</a>
-                      </td>
-                    </tr>
+                    <tr><td style="background:#119ee8;border-radius:14px;">
+                      <a href="${inviteLink}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:700;color:#fff;text-decoration:none;">Register your account →</a>
+                    </td></tr>
                   </table>
-                  <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">Or copy and paste this link:</p>
+                  <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">Or copy and paste: </p>
                   <p style="margin:0;font-size:12px;color:#119ee8;word-break:break-all;">${inviteLink}</p>
                 </td>
               </tr>
@@ -66,38 +58,28 @@ function buildInviteEmail(candidateName: string, inviteLink: string) {
             </table>
           </td></tr>
         </table>
-      </body>
-      </html>
+      </body></html>
     `,
   };
 }
 
-type RouteContext = {
-  params: Promise<{ id: string }>;
-};
+type RouteContext = { params: Promise<{ id: string }> };
 
 export async function POST(req: NextRequest, context: RouteContext) {
   const client = await db.connect();
-
   try {
     const sessionUser = await getSessionUser();
-
-    if (!sessionUser) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    if (sessionUser.role !== "EMPLOYER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (sessionUser.role !== "EMPLOYER") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await context.params;
     const candidateId = Number(id);
-
-    if (Number.isNaN(candidateId)) {
-      return NextResponse.json({ error: "Invalid candidate id" }, { status: 400 });
-    }
+    if (Number.isNaN(candidateId)) return NextResponse.json({ error: "Invalid candidate id" }, { status: 400 });
 
     const companyId = sessionUser.company_id ?? sessionUser.id;
+
+    const performerResult = await db.query(`SELECT full_name FROM users WHERE id = $1`, [sessionUser.id]);
+    const performerName = performerResult.rows[0]?.full_name || sessionUser.email;
 
     await client.query("BEGIN");
 
@@ -106,15 +88,9 @@ export async function POST(req: NextRequest, context: RouteContext) {
       [candidateId, companyId]
     );
 
-    if (candidateResult.rows.length === 0) {
-      return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
-    }
-
+    if (candidateResult.rows.length === 0) return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
     const candidate = candidateResult.rows[0];
-
-    if (candidate.linked_user_id) {
-      return NextResponse.json({ error: "Candidate already registered" }, { status: 400 });
-    }
+    if (candidate.linked_user_id) return NextResponse.json({ error: "Candidate already registered" }, { status: 400 });
 
     await client.query(
       `UPDATE candidate_invites SET used_at = NOW() WHERE candidate_id = $1 AND used_at IS NULL`,
@@ -132,6 +108,17 @@ export async function POST(req: NextRequest, context: RouteContext) {
     await client.query("COMMIT");
 
     const inviteLink = `${req.nextUrl.origin}/candidate/register?token=${token}`;
+    const ipAddress  = req.headers.get("x-forwarded-for") || null;
+    const userAgent  = req.headers.get("user-agent") || null;
+
+    await logCandidateActivity({
+      candidateId,
+      user: { id: sessionUser.id, full_name: performerName, role: sessionUser.role },
+      actionType: ACTIVITY_ACTIONS.INVITE_REGENERATED,
+      description: `Invite link regenerated and sent to ${candidate.email} by ${performerName}.`,
+      ipAddress,
+      userAgent,
+    });
 
     const emailTemplate = buildInviteEmail(candidate.full_name, inviteLink);
     resend.emails.send({
