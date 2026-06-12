@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ACTIVITY_META } from "@/lib/activity-log";
+import { ACTIVITY_META } from "@/lib/activity-meta";
 
 type Candidate = {
   id: number;
