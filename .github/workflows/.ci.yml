@@ -1,0 +1,53 @@
+name: CI/CD + Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-secure:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # --- Code Quality ---
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      # --- Security ---
+      - name: Dependency vulnerability scan
+        run: npm audit --audit-level=high
+
+      - name: Scan for hardcoded secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+
+      - name: CodeQL SAST scan
+        uses: github/codeql-action/analyze@v3
+        with:
+          languages: typescript
+
+      - name: Licence compliance check
+        run: npx license-checker --onlyAllow 'MIT;ISC;Apache-2.0;BSD-2-Clause;BSD-3-Clause'
+
+      # --- Build ---
+      - name: Build
+        run: npm run build
