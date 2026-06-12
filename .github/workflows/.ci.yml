@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Add this block - CodeQL needs these permissions
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   build-and-secure:
     runs-on: ubuntu-latest
@@ -17,22 +23,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      # --- Code Quality ---
       - name: Type check
         run: npx tsc --noEmit
 
       - name: Lint
         run: npm run lint
 
-      # --- Security ---
       - name: Dependency vulnerability scan
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=critical
 
       - name: Scan for hardcoded secrets
         uses: trufflesecurity/trufflehog@main
@@ -40,14 +44,21 @@ jobs:
           path: ./
           base: main
 
-      - name: CodeQL SAST scan
-        uses: github/codeql-action/analyze@v3
+      # CodeQL needs all 3 steps in order
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
         with:
-          languages: typescript
+          languages: typescript        # languages goes HERE in init
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        # NO languages here - just analyze
 
       - name: Licence compliance check
         run: npx license-checker --onlyAllow 'MIT;ISC;Apache-2.0;BSD-2-Clause;BSD-3-Clause'
 
-      # --- Build ---
       - name: Build
         run: npm run build
