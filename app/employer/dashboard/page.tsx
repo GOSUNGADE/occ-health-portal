@@ -46,8 +46,14 @@ type DashboardStats = {
   noShowBookings: number;
 };
 
-function getApiError(data: any, fallback: string) {
-  return data?.error || data?.message || fallback;
+function getApiError(data: unknown, fallback: string) {
+  if (data && typeof data === "object") {
+    const d = data as Record<string, unknown>;
+    return (typeof d.error === "string" ? d.error : null)
+      || (typeof d.message === "string" ? d.message : null)
+      || fallback;
+  }
+  return fallback;
 }
 
 function formatStatusLabel(status: string) {
