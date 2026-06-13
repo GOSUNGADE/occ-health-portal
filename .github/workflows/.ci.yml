@@ -60,6 +60,10 @@ jobs:
         
       - name: Build
         run: npm run build
+        env:
+          DATABASE_URL: ${{postgresql://neondb_owner:npg_wRhia3U8oGEO@ep-small-block-a7skb1o2-pooler.ap-southeast-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require}}
+          JWT_SECRET: ${{my-super-secret-key-123456789}}
+          RESEND_API_KEY: ${{re_Nf2scWsy_AjD4uEQE1S8PhdpWgqP7Mdrz}}
 
       - name: Deploy to Vercel
         if: success() && github.ref == 'refs/heads/main'
