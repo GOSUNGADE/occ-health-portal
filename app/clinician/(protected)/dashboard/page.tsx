@@ -20,9 +20,7 @@ export default function ClinicianDashboardPage() {
       const res = await fetch("/api/clinician/dashboard", {
         cache: "no-store",
       });
-
       const data = await res.json();
-
       if (res.ok) {
         setStats({
           assigned_today: Number(data.assigned_today || 0),
@@ -31,13 +29,42 @@ export default function ClinicianDashboardPage() {
         });
       }
     }
-
     loadDashboard();
   }, []);
 
   return (
     <div className="space-y-6">
-      ...rest of your JSX unchanged...
+      <div>
+        <h1 className="text-2xl font-semibold text-slate-900">
+          Clinician Dashboard
+        </h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Welcome to the clinician portal.
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="text-sm text-slate-500">Assigned Today</div>
+          <div className="mt-2 text-3xl font-semibold">
+            {stats.assigned_today}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="text-sm text-slate-500">Pending Assessments</div>
+          <div className="mt-2 text-3xl font-semibold">
+            {stats.pending_assessments}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="text-sm text-slate-500">Completed This Week</div>
+          <div className="mt-2 text-3xl font-semibold">
+            {stats.completed_this_week}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
