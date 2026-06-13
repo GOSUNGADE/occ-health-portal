@@ -120,6 +120,8 @@ export default function AppShell({
   return (
     <>
       <style>{`
+        * { box-sizing: border-box; }
+
         .appshell-wrapper {
           display: flex;
           min-height: 100vh;
@@ -127,9 +129,10 @@ export default function AppShell({
           font-family: Arial, sans-serif;
         }
 
-        /* Desktop sidebar */
+        /* Desktop sidebar — always full viewport height, never shrinks */
         .appshell-sidebar {
           width: 280px;
+          min-width: 280px;
           flex-shrink: 0;
           background: linear-gradient(180deg, #0d1526 0%, #101a2f 100%);
           color: #fff;
@@ -137,9 +140,12 @@ export default function AppShell({
           flex-direction: column;
           justify-content: space-between;
           padding: 24px 20px;
+          position: sticky;
+          top: 0;
+          height: 100vh;
+          overflow-y: auto;
         }
 
-        /* Mobile: sidebar becomes an overlay drawer */
         .appshell-mobile-backdrop {
           display: none;
         }
@@ -149,6 +155,7 @@ export default function AppShell({
           display: flex;
           flex-direction: column;
           min-width: 0;
+          min-height: 100vh;
         }
 
         .appshell-topbar {
@@ -159,6 +166,9 @@ export default function AppShell({
           align-items: center;
           padding: 0 20px;
           gap: 16px;
+          position: sticky;
+          top: 0;
+          z-index: 10;
         }
 
         .appshell-hamburger {
@@ -187,12 +197,12 @@ export default function AppShell({
 
         @media (max-width: 768px) {
           .appshell-sidebar {
-            /* Hidden off-screen on mobile — drawer approach */
             position: fixed;
             top: 0;
             left: 0;
             height: 100%;
             width: 260px;
+            min-width: 260px;
             z-index: 200;
             transform: translateX(-100%);
             transition: transform 0.25s ease;
@@ -268,6 +278,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     justifyContent: "space-between",
     height: "100%",
+    minHeight: "100%",
   },
   brandBox: {
     display: "flex",
