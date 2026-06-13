@@ -6,11 +6,11 @@ on:
   pull_request:
     branches: [main]
 
-# Add this block - CodeQL needs these permissions
 permissions:
   contents: read
   security-events: write
   actions: read
+  id-token: write
 
 jobs:
   build-and-secure:
@@ -44,21 +44,26 @@ jobs:
           path: ./
           base: main
 
-      # CodeQL needs all 3 steps in order
       - name: Initialise CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: typescript        # languages goes HERE in init
+          languages: typescript
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
-        # NO languages here - just analyze
 
       - name: Licence compliance check
         run: npx license-checker --onlyAllow 'MIT;ISC;Apache-2.0;BSD-2-Clause;BSD-3-Clause;LGPL-3.0;LGPL-3.0-or-later;Python-2.0;CC-BY-4.0;CC0-1.0;Unlicense;0BSD'
 
       - name: Build
         run: npm run build
+
+      - name: Deploy to Vercel
+        if: success() && github.ref == 'refs/heads/main'
+        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
