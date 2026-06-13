@@ -56,14 +56,14 @@ jobs:
         uses: github/codeql-action/analyze@v3
 
       - name: Licence compliance check
-        run: npx license-checker --onlyAllow 'MIT;ISC;Apache-2.0;BSD-2-Clause;BSD-3-Clause;LGPL-3.0;LGPL-3.0-or-later;Python-2.0;CC-BY-4.0;CC0-1.0;Unlicense;0BSD;MPL-2.0'
-
+        run: npx license-checker --onlyAllow 'MIT;ISC;Apache-2.0;BSD-2-Clause;BSD-3-Clause;LGPL-3.0;LGPL-3.0-or-later;Python-2.0;CC-BY-4.0;CC0-1.0;Unlicense;0BSD;MPL-2.0;BlueOak-1.0.0'
+        
       - name: Build
         run: npm run build
 
       - name: Deploy to Vercel
         if: success() && github.ref == 'refs/heads/main'
-        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
+        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes --force
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
